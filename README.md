@@ -1,55 +1,104 @@
-# Azure Sentinel SIEM & Honeypot
+# Azure Sentinel SIEM & Honeypot: Build Guide
 
 Use this guide to build a **cloud-native SIEM lab in Microsoft Sentinel** that captures RDP brute-force activity, enriches failed logon events with geolocation data, and visualizes the results in a workbook dashboard.
 
 ## What You Will Build
 
-Set up the lab in this order:
-
-1. Deploy a Windows 10 honeypot VM in Azure.
-2. Send Windows Security Events to a Log Analytics Workspace.
-3. Enrich failed logons with KQL and a GeoIP watchlist.
-4. Build a Sentinel workbook that shows the global attack map, targeted usernames, and attack trends.
+1. A publicly reachable Windows honeypot VM in Azure.
+2. Centralized security logging in Log Analytics Workspace (LAW).
+3. Sentinel detection/enrichment pipeline for failed logons (Event ID 4625).
+4. A workbook attack map and trend dashboard.
 
 ## Prerequisites
 
-Before you start, make sure you have:
+- Azure subscription with permission to create VMs, Log Analytics Workspace, and Sentinel resources.
+- A resource group for the lab.
+- `geoip-summarized.csv` (included in this repo under `references/`).
 
-* An Azure subscription.
-* Microsoft Sentinel enabled on a Log Analytics Workspace.
-* A Windows VM that you can expose to the internet for the lab.
-* Azure Monitor Agent and Data Collection Rules available for log ingestion.
-* A GeoIP CSV watchlist for workbook enrichment.
+## Step-by-Step Lab Setup
 
-## Build Steps
+### 1. Create the Honeypot VM
 
-### 1. Deploy the Honeypot VM
-Create a Windows 10 VM in Azure and configure it as a deliberately exposed endpoint. Disable the Network Security Group rules and Windows Firewall controls needed for the lab so the machine can receive public authentication attempts.
+1. In Azure Portal, create a new virtual machine.
+2. Select:
+	- Image/OS: Windows 10 Enterprise
+	- Size: Standard DC1s v3 (1 vCPU, 8 GiB RAM)
+3. Set and save the VM local admin username/password.
+4. After deployment, open the VM Network Security Group and create an inbound rule that allows all traffic (`Any` source, `Any` protocol, `Any` port, `Allow`).
+5. RDP into the VM.
+6. Turn off Windows Defender Firewall profiles from `wf.msc` to make the host intentionally exposed for the lab.
 
-### 2. Collect Security Logs
-Enable Windows Security Event collection and forward the logs to a Log Analytics Workspace through the Azure Monitor Agent. Confirm that failed logons generate Event ID 4625 entries in the workspace.
+Note: This is intentionally insecure for learning purposes only. Do not reuse this configuration in production.
 
-### 3. Enrich the Logs with KQL
-Upload a GeoIP watchlist such as `geoip-summarized.csv` to Sentinel, then use KQL to join the watchlist with the failed logon events. Map each source IP to latitude, longitude, city, and country so the data can be plotted on a map.
+### 2. Generate and Verify Security Events
 
-### 4. Build the Workbook Dashboard
-Create a Sentinel workbook that turns the enriched data into a visual summary. Use a map for global origins, a donut or pie chart for the most targeted usernames, and a time-series chart for attack volume over time. Arrange the visuals so the dashboard reads clearly as a forensic overview.
+1. Before successful login, fail sign-in attempts 3 or more times with a fake username (for example, `employee`).
+2. Log in successfully.
+3. In Event Viewer, confirm Security Event ID `4625` entries exist.
 
-![Global Authentication Failures & Geo-Threat Map](references/workbook.png)
+### 3. Create Logging and Sentinel Resources
 
-## Sample KQL
+1. Create a Log Analytics Workspace (LAW).
+2. Create a Microsoft Sentinel instance and connect it to the LAW.
+3. In Sentinel Data Connectors, configure `Windows Security Events via AMA`.
+4. Create/apply a Data Collection Rule (DCR) so security events from the VM are forwarded to LAW.
 
-Use this query as the basis for the geolocation enrichment step:
+Quick validation query:
+
+```kusto
+SecurityEvent
+| where EventId == 4625
+| order by TimeGenerated desc
+```
+
+### 4. Import GeoIP Watchlist for Enrichment
+
+1. In Sentinel, create a Watchlist from `references/geoip-summarized.csv`.
+2. Use these watchlist values:
+	- Name/Alias: `geoip`
+	- Source type: Local file
+	- Number of lines before row: `0`
+	- Search key: `network`
+3. Wait for import completion (approximately 54k rows).
+
+### 5. Enrich Failed Logons with Geographic Data
+
+Use this KQL to map failed logons to location data:
 
 ```kusto
 let GeoIPDB_FULL = _GetWatchlist("geoip");
-SecurityEvent
+let WindowsEvents = SecurityEvent;
+WindowsEvents
 | where EventID == 4625
+| order by TimeGenerated desc
 | evaluate ipv4_lookup(GeoIPDB_FULL, IpAddress, network)
-| project TimeGenerated, IpAddress, City, Country, Latitude, Longitude
+| summarize FailureCount = count() by IpAddress, latitude, longitude, cityname, countryname
+| project FailureCount, AttackerIp = IpAddress, latitude, longitude, city = cityname, country = countryname,
+friendly_location = strcat(cityname, " (", countryname, ")")
 ```
 
-## Workbook Reference
+### 6. Build the Workbook Dashboard
 
-Use [workbook.md](workbook.md) for the companion KQL notes that support the dashboard in [references/workbook.png](references/workbook.png).
+1. In Sentinel, create a new Workbook.
+2. Add a Query element and use the enriched KQL output.
+3. Create at least these visuals:
+	- Map: attacker origin by latitude/longitude
+	- Username targeting chart: top attacked accounts
+	- Time trend chart: failed logons over time
+
+Reference workbook image:
+
+![Global Authentication Failures & Geo-Threat Map](references/workbook.png)
+
+## Companion Query Notes
+
+See [workbook.md](workbook.md) for additional KQL used in this project.
+
+## Cleanup
+
+To avoid unnecessary costs after testing:
+
+1. Stop/deallocate the VM.
+2. Delete the VM and attached resources if you are done.
+3. Remove Sentinel/LAW resources if no longer needed.
 
