@@ -1,4 +1,4 @@
-# Azure Sentinel SIEM & Honeypot Build Guide
+# Azure Sentinel SIEM & Honeypot
 
 Use this guide to build a **cloud-native SIEM lab in Microsoft Sentinel** that captures RDP brute-force activity, enriches failed logon events with geolocation data, and visualizes the results in a workbook dashboard.
 
