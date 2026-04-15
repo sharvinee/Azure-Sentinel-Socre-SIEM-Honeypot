@@ -35,6 +35,8 @@ Upload a GeoIP watchlist such as `geoip-summarized.csv` to Sentinel, then use KQ
 ### 4. Build the Workbook Dashboard
 Create a Sentinel workbook that turns the enriched data into a visual summary. Use a map for global origins, a donut or pie chart for the most targeted usernames, and a time-series chart for attack volume over time. Arrange the visuals so the dashboard reads clearly as a forensic overview.
 
+![Global Authentication Failures & Geo-Threat Map](references/workbook.png)
+
 ## Sample KQL
 
 Use this query as the basis for the geolocation enrichment step:
@@ -49,4 +51,5 @@ SecurityEvent
 
 ## Workbook Reference
 
-Use [workbook.md](workbook.md) for the companion KQL notes that support the dashboard in [workbook.png](workbook.png).
+Use [workbook.md](workbook.md) for the companion KQL notes that support the dashboard in [references/workbook.png](references/workbook.png).
+
